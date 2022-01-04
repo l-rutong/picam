@@ -22,7 +22,7 @@ extern "C" {
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/time.h>
+#include <sys/time.h> 
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/statvfs.h>
@@ -46,6 +46,8 @@ extern "C" {
 #include "dispmanx.h"
 #include "timestamp.h"
 #include "subtitle.h"
+
+#include "motion.h"
 
 #define PROGRAM_NAME     "picam"
 #define PROGRAM_VERSION  "1.4.11"
@@ -581,6 +583,43 @@ static pthread_mutex_t camera_finish_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t camera_finish_cond = PTHREAD_COND_INITIALIZER;
 
 static char errbuf[1024];
+
+
+static void motioncallback(void *context, enum movementevents state)
+{
+	// context = context;	/* Shush */
+	// pthread_mutex_lock(&ctx.lock);
+	// printf("\nmotioncallback(%d) called at frame %d\n", state, ctx.framenum);
+	// ctx.lastevent = ctx.framenum;
+	// if (state == quiescent) {
+	// 	switch (ctx.recstate) {
+	// 	case waiting:
+	// 		break;
+	// 	case triggered:
+	// 		ctx.recstate = waiting;
+	// 		break;
+	// 	case recording:
+	// 		ctx.recstate = stopping;
+	// 		break;
+	// 	case stopping:
+	// 		break;
+	// 	}
+	// } else if (state == movement) {
+	// 	switch (ctx.recstate) {
+	// 	case waiting:
+	// 		ctx.recstate = triggered;
+	// 		break;
+	// 	case triggered:
+	// 		break;
+	// 	case recording:
+	// 		break;
+	// 	case stopping:
+	// 		ctx.recstate = recording;
+	// 		break;
+	// 	}
+	// }
+	// pthread_mutex_unlock(&ctx.lock);
+}
 
 static void unmute_audio() {
   log_info("unmute");
@@ -3802,6 +3841,7 @@ static int video_encode_startup() {
   OMX_VIDEO_PARAM_PORTFORMATTYPE format;
   OMX_VIDEO_PARAM_AVCTYPE avctype;
   OMX_VIDEO_PARAM_BITRATETYPE bitrate_type;
+  OMX_CONFIG_PORTBOOLEANTYPE boolean;
   OMX_CONFIG_BOOLEANTYPE boolean_type;
   OMX_PARAM_PORTDEFINITIONTYPE portdef, portdef_encode_output;
   OMX_PARAM_U32TYPE u32;
@@ -4046,6 +4086,20 @@ static int video_encode_startup() {
     exit(EXIT_FAILURE);
   }
 
+  // rli OMX_IndexParamBrcmVideoAVCInlineVectorsEnable
+  memset(&boolean, 0, sizeof(OMX_CONFIG_PORTBOOLEANTYPE));
+  boolean.nSize = sizeof(OMX_CONFIG_PORTBOOLEANTYPE);
+  boolean.nVersion.nVersion = OMX_VERSION;
+  boolean.nPortIndex = VIDEO_ENCODE_OUTPUT_PORT;
+  boolean.bEnabled = OMX_TRUE;
+
+  error = OMX_SetParameter(ILC_GET_HANDLE(video_encode),
+      OMX_IndexParamBrcmVideoAVCInlineVectorsEnable, &boolean);
+  if (error != OMX_ErrorNone) {
+    log_fatal("error: failed to set OMX_IndexParamBrcmVideoAVCInlineVectorsEnable: 0x%x\n", error);
+    exit(EXIT_FAILURE);
+  }
+
   // Set video_encode component to idle state
   log_debug("Set video_encode state to idle\n");
   if (ilclient_change_component_state(video_encode, OMX_StateIdle) == -1) {
@@ -4138,7 +4192,14 @@ static void encode_and_send_image() {
       int do_break = 0;
       if (out != NULL) { // If we get a buffer
         if (out->nFilledLen > 0) {
-          video_encode_fill_buffer_done(out);
+          if (out->nFlags & OMX_BUFFERFLAG_CODECSIDEINFO) {
+            // vector data for motion detection
+            findmotion(out);
+          }
+          else {
+            // actual h264 data
+            video_encode_fill_buffer_done(out);
+          }
           out->nFilledLen = 0;
         } else { // Buffer is empty
           log_debug("e(0x%x)", out->nFlags);
@@ -4147,7 +4208,8 @@ static void encode_and_send_image() {
 
         // If out->nFlags doesn't have ENDOFFRAME,
         // there is remaining buffer for this frame.
-        if (out->nFlags & OMX_BUFFERFLAG_ENDOFFRAME) {
+        // vector data should not conclude a frame
+        if (out->nFlags & OMX_BUFFERFLAG_ENDOFFRAME && !(out->nFlags & OMX_BUFFERFLAG_CODECSIDEINFO)) {
           do_break = 1;
         }
 
@@ -6151,6 +6213,8 @@ int main(int argc, char **argv) {
     timestamp_set_letter_spacing(timestamp_letter_spacing);
     timestamp_fix_position(video_width_32, video_height_16);
   }
+
+  initmotion(video_width, video_height, 0, 5, 20, motioncallback, NULL);
 
   if (query_and_exit) {
     query_sensor_mode();

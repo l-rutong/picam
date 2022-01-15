@@ -461,6 +461,9 @@ static size_t last_video_buffer_size = 0;
 static int keyframes_count = 0;
 static int is_first_encode = 1;
 
+static int motion_rec_debouncing_num_gop = 10;
+static int motion_rec_start = 0;
+
 static int video_pending_drop_frames = 0;
 static int audio_pending_drop_frames = 0;
 
@@ -587,6 +590,13 @@ static char errbuf[1024];
 
 static void motioncallback(void *context, enum movementevents state)
 {
+  printf("detected %d\n", keyframes_count);
+
+  motion_rec_start = keyframes_count;
+  if (!is_recording) {
+    start_record();
+  }
+
 	// context = context;	/* Shush */
 	// pthread_mutex_lock(&ctx.lock);
 	// printf("\nmotioncallback(%d) called at frame %d\n", state, ctx.framenum);
@@ -1004,6 +1014,7 @@ void *rec_thread_start() {
   } else {
     dest_dir = rec_archive_dir;
   }
+  recording_basename[0] = 0;
 
   if (recording_basename[0] != 0) { // basename is already decided
     snprintf(recording_filepath, sizeof(recording_filepath),
@@ -3789,6 +3800,11 @@ static int video_encode_fill_buffer_done(OMX_BUFFERHEADERTYPE *out) {
         // calculate FPS and display it
         if (tsBegin.tv_sec != 0 && tsBegin.tv_nsec != 0) {
           keyframes_count++;
+
+          if (motion_rec_start + motion_rec_debouncing_num_gop < keyframes_count && is_recording) {
+            stop_record();
+          }
+
           clock_gettime(CLOCK_MONOTONIC, &tsEnd);
           timespec_subtract(&tsDiff, &tsEnd, &tsBegin);
           unsigned long long wait_nsec = tsDiff.tv_sec * INT64_C(1000000000) + tsDiff.tv_nsec;
@@ -6214,7 +6230,7 @@ int main(int argc, char **argv) {
     timestamp_fix_position(video_width_32, video_height_16);
   }
 
-  initmotion(video_width, video_height, 0, 5, 20, motioncallback, NULL);
+  initmotion(video_width, video_height, 0, 2, 5, motioncallback, NULL);
 
   if (query_and_exit) {
     query_sensor_mode();

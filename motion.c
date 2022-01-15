@@ -269,8 +269,8 @@ static void lookformotion(struct motvec *v)
 	if (mctx.pngfn)
 		dumppng(v);
 
-printf("\r%5d / %d (%d).", t, mctx.threshold, n);
-fflush(stdout);
+// printf("\r%5d / %d (%d).", t, mctx.threshold, n);
+// fflush(stdout);
 	if (t >= mctx.threshold) {
 		if (mctx.flags & FLAGS_MOVEMENT) {
 			/* Do nothing */

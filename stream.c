@@ -864,7 +864,7 @@ void *rec_thread_stop(int skip_cleanup) {
   int read_len;
   uint8_t *copy_buf;
 
-  log_info("stop rec\n");
+  log_info("stopping rec\n");
   if (!skip_cleanup) {
     copy_buf = malloc(BUFSIZ);
     if (copy_buf == NULL) {
@@ -916,7 +916,7 @@ void *rec_thread_stop(int skip_cleanup) {
 
   is_recording = 0;
   state_set(state_dir, "record", "false");
-
+  log_info("rec stopped\n");
   pthread_exit(0);
 }
 
@@ -6196,7 +6196,7 @@ int main(int argc, char **argv) {
     timestamp_fix_position(video_width_32, video_height_16);
   }
 
-  initmotion(video_width, video_height, 0, 3, 60, motioncallback, NULL);
+  initmotion(video_width, video_height, 0, 1, 16, 60, motioncallback, NULL);
 
   if (query_and_exit) {
     query_sensor_mode();

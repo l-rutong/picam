@@ -92,6 +92,8 @@ static struct {
 	void 			(*eventcb)(void *, enum movementevents);
 	void			*eventcbp;
 	char			*pngfn;
+	int				window_size;
+	int				*filter_window;
 } mctx;
 
 
@@ -144,7 +146,7 @@ printf("\n");
 
 
 
-int initmotion(int width, int height, char *map, int sens, int thresh,
+int initmotion(int width, int height, char *map, int sens, int thresh, int window_size,
 	void(*eventcb)(void *, enum movementevents), void *cbp)
 {
 	int rows, cols;
@@ -159,6 +161,8 @@ int initmotion(int width, int height, char *map, int sens, int thresh,
 	mctx.threshold = thresh; //(rows * cols * thresh) / 100;
 	mctx.pngfn = "/run/shm/hls/dump.png";
 	mctx.flags = FLAGS_MOTMONITOR;
+	mctx.window_size = window_size;
+	mctx.filter_window = (int *) calloc(window_size, sizeof(int));
 
 	printf("PNG filename: %s\n", mctx.pngfn);
 	if (map) {
@@ -192,7 +196,21 @@ int initmotion(int width, int height, char *map, int sens, int thresh,
 	return 0;
 }
 
+int noise_floor(int n)
+{
+	static int i = 0;
+	static int sum = 0;
 
+	if(n > mctx.threshold) n = mctx.threshold;
+	if(i >= mctx.window_size) i = 0;
+
+	sum+=n;
+	sum-=mctx.filter_window[i];
+	mctx.filter_window[i]=n;
+	i++;
+
+	return sum / mctx.window_size;
+}
 
 void dumppng(struct motvec *v)
 {
@@ -253,6 +271,7 @@ static void lookformotion(struct motvec *v)
 	int d;
 	int d2;
 	char m[122*68+1];
+	int nf;
 
 	n = (mctx.width) * mctx.height;
 
@@ -269,9 +288,16 @@ static void lookformotion(struct motvec *v)
 	if (mctx.pngfn)
 		dumppng(v);
 
-// printf("\r%5d / %d (%d).", t, mctx.threshold, n);
-// fflush(stdout);
-	if (t >= mctx.threshold) {
+	nf = noise_floor(t);
+
+printf("\r%5d (noise: %2d) / %d (%d).", t, nf, mctx.threshold, n);
+fflush(stdout);
+
+	if (t > nf) t = t - nf;
+	else t = 0;
+
+	// do not trigger if more than half of the micro blocks has movements
+	if (t >= mctx.threshold && t < n / 2) { 
 		if (mctx.flags & FLAGS_MOVEMENT) {
 			/* Do nothing */
 			return;

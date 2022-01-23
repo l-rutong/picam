@@ -22,5 +22,5 @@ enum movementevents {
 	movement,
 };
 
-int initmotion(int, int , char *, int, int, void(*)(void *, enum movementevents), void *);
+int initmotion(int, int , char *, int, int, int, void(*)(void *, enum movementevents), void *);
 void findmotion(OMX_BUFFERHEADERTYPE *out);

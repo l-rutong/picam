@@ -591,11 +591,7 @@ static char errbuf[1024];
 static void motioncallback(void *context, enum movementevents state)
 {
   printf("detected %d\n", keyframes_count);
-
   motion_rec_start = keyframes_count;
-  if (!is_recording) {
-    start_record();
-  }
 
 	// context = context;	/* Shush */
 	// pthread_mutex_lock(&ctx.lock);
@@ -3801,7 +3797,12 @@ static int video_encode_fill_buffer_done(OMX_BUFFERHEADERTYPE *out) {
         if (tsBegin.tv_sec != 0 && tsBegin.tv_nsec != 0) {
           keyframes_count++;
 
+          if (!is_recording && motion_rec_start > 0) {
+            start_record();
+          }
+
           if (motion_rec_start + motion_rec_debouncing_num_gop < keyframes_count && is_recording) {
+            motion_rec_start = 0;
             stop_record();
           }
 
@@ -6230,7 +6231,7 @@ int main(int argc, char **argv) {
     timestamp_fix_position(video_width_32, video_height_16);
   }
 
-  initmotion(video_width, video_height, 0, 2, 5, motioncallback, NULL);
+  initmotion(video_width, video_height, 0, 3, 60, motioncallback, NULL);
 
   if (query_and_exit) {
     query_sensor_mode();

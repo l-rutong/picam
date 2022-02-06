@@ -588,9 +588,9 @@ static pthread_cond_t camera_finish_cond = PTHREAD_COND_INITIALIZER;
 static char errbuf[1024];
 
 
-static void motioncallback(void *context, enum movementevents state)
+static void motioncallback(int motion, enum movementevents state)
 {
-  printf("detected %d\n", keyframes_count);
+  printf("detected %5d @ kf:%d\n", motion, keyframes_count);
   motion_rec_start = keyframes_count;
 
 	// context = context;	/* Shush */
@@ -1130,6 +1130,7 @@ void *rec_thread_start() {
 }
 
 void start_record() {
+  int presult;
   if (is_recording) {
     log_warn("recording is already started\n");
     return;
@@ -1141,7 +1142,8 @@ void start_record() {
   }
 
   rec_thread_needs_exit = 0;
-  pthread_create(&rec_thread, NULL, rec_thread_start, NULL);
+  presult = pthread_create(&rec_thread, NULL, rec_thread_start, NULL);
+  log_info("presult=%d\n", presult);
 }
 
 // set record_buffer_keyframes to newsize
@@ -6196,7 +6198,7 @@ int main(int argc, char **argv) {
     timestamp_fix_position(video_width_32, video_height_16);
   }
 
-  initmotion(video_width, video_height, 0, 1, 16, 60, motioncallback, NULL);
+  initmotion(video_width, video_height, 0, 1, 6, 120, motioncallback);
 
   if (query_and_exit) {
     query_sensor_mode();

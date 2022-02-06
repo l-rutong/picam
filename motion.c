@@ -89,8 +89,7 @@ static struct {
 #define FLAGS_MOVEMENT		(1<<0)
 #define FLAGS_MOTMONITOR	(1<<1)
 	int			flags;
-	void 			(*eventcb)(void *, enum movementevents);
-	void			*eventcbp;
+	void 			(*eventcb)(int motion, enum movementevents);
 	char			*pngfn;
 	int				window_size;
 	int				*filter_window;
@@ -147,7 +146,7 @@ printf("\n");
 
 
 int initmotion(int width, int height, char *map, int sens, int thresh, int window_size,
-	void(*eventcb)(void *, enum movementevents), void *cbp)
+	void(*eventcb)(int, enum movementevents))
 {
 	int rows, cols;
 	int x, y;
@@ -185,7 +184,6 @@ int initmotion(int width, int height, char *map, int sens, int thresh, int windo
 	}
 
 	mctx.eventcb = eventcb;
-	mctx.eventcbp = cbp;
 
 	pthread_mutex_init(&mctx.lock, NULL);
 	pthread_cond_init(&mctx.cond, NULL);
@@ -196,20 +194,57 @@ int initmotion(int width, int height, char *map, int sens, int thresh, int windo
 	return 0;
 }
 
-int noise_floor(int n)
+int ma_filter(int t)
 {
 	static int i = 0;
 	static int sum = 0;
+	int n, nf;
+	int j,k;
+	int head_avg = 0;
 
-	if(n > mctx.threshold) n = mctx.threshold;
+	int ot = t;
+	int nmblk = mctx.width * mctx.height;
+
+	// concider motion value as noise is more than 1/4 of the micro blocks are moved
+	if(t > (nmblk / 4)) t = mctx.threshold;
+
+	// calculate noise floor
+	// big motion value should not be considered as noise
+	n = t;
+	if(n > mctx.threshold * 4) n = mctx.threshold * 4;
+	sum+=n;
+
+	n = mctx.filter_window[i];
+	if(n > mctx.threshold * 4) n = mctx.threshold * 4;
+	sum-=n;
+
+	nf = sum / mctx.window_size;
+
+	// put latest value
+	mctx.filter_window[i]=t;
+
+	// printf("nf(%d) ", nf);
+
+	// calculate moving avg of recent motion value
+	for(j = 0; j < 12; j++) {
+		k = i - j;
+		if(k < 0) k = mctx.window_size + i - j;
+		head_avg += mctx.filter_window[k];
+	}
+	t = head_avg / 12;
+
+	// filter windows is a ring buffer
+	i++;	
 	if(i >= mctx.window_size) i = 0;
 
-	sum+=n;
-	sum-=mctx.filter_window[i];
-	mctx.filter_window[i]=n;
-	i++;
+	// deduct by noise floor
+	if (t > nf) t = t - nf;
+	else t = 0;
 
-	return sum / mctx.window_size;
+printf("\r%4d(%4d -%3d) / %d (%d).", t, ot, nf, mctx.threshold, nmblk);
+fflush(stdout);
+
+	return t;
 }
 
 void dumppng(struct motvec *v)
@@ -268,49 +303,25 @@ static void lookformotion(struct motvec *v)
 	int i;
 	int n;
 	int t;
-	int d;
-	int d2;
-	char m[122*68+1];
-	int nf;
+	int ft;
 
 	n = (mctx.width) * mctx.height;
 
-	for (i = t = d = d2 = 0; i < n /* && t < mctx.threshold */; i++, d++, d2++) {
+	for (i = t = 0; i < n /* && t < mctx.threshold */; i++) {
 		if (mctx.map[i] <
 			((v[i].dx * v[i].dx) + (v[i].dy * v[i].dy))) {
-			m[d2] = '*';
 			t++;
-		} else m[d2] = ' ';
-		if (d == mctx.width + 0) { m[d2] = '\n'; d = 0; }
+		}
 	}
-	m[d2] = '\0';
 
 	if (mctx.pngfn)
 		dumppng(v);
 
-	nf = noise_floor(t);
+	ft = ma_filter(t);
 
-printf("\r%5d (noise: %2d) / %d (%d).", t, nf, mctx.threshold, n);
-fflush(stdout);
-
-	if (t > nf) t = t - nf;
-	else t = 0;
-
-	// do not trigger if more than half of the micro blocks has movements
-	if (t >= mctx.threshold && t < n / 2) { 
-		if (mctx.flags & FLAGS_MOVEMENT) {
-			/* Do nothing */
-			return;
-		}
-		mctx.flags |= FLAGS_MOVEMENT;
-		mctx.eventcb(mctx.eventcbp, movement);
-	} else {
-		if ((mctx.flags & FLAGS_MOVEMENT) == 0) {
-			return;
-		}
-		mctx.flags &= ~FLAGS_MOVEMENT;
-		mctx.eventcb(mctx.eventcbp, quiescent);
-	}
+	if (ft >= mctx.threshold) { 
+		mctx.eventcb(ft, movement);
+	} 
 }
 
 

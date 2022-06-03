@@ -956,6 +956,8 @@ void *rec_thread_start() {
   char *dest_dir;
   int has_error;
 
+  pthread_detach(pthread_self());
+
   has_error = 0;
   copy_buf = malloc(BUFSIZ);
   if (copy_buf == NULL) {
@@ -6220,7 +6222,7 @@ int main(int argc, char **argv) {
       pthread_cond_signal(&rec_cond);
 
       stop_record();
-      pthread_join(rec_thread, NULL);
+      // pthread_join(rec_thread, NULL);
     }
 
     pthread_mutex_lock(&camera_finish_mutex);

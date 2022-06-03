@@ -50,6 +50,7 @@ typedef struct MpegTSWrite {
     MpegTSSection pat; /* MPEG-2 PAT table */
     MpegTSSection sdt; /* MPEG-2 SDT table context */
     MpegTSService **services;
+    int what;
     int64_t sdt_period; /* SDT period in PCR time base */
     int64_t pat_period; /* PAT/PMT period in PCR time base */
     int nb_services;
@@ -293,7 +294,8 @@ int hls_write_packet(HTTPLiveStreaming *hls, AVPacket *pkt, int split) {
     hls->segment_start_pts = pkt->pts;
     hls->segment_durations_idx = 0;
   }
-
+  // ts = hls->format_ctx->priv_data;
+  // fprintf(stderr, "ts->nb_services (%d)\n", ts->nb_services);
   if (split) {
     // Store the last segment duration
     if (++hls->segment_durations_idx == hls->num_recent_files) {
